@@ -10,6 +10,7 @@ Pro version: Subvert, Quarantine, Defend.
 """
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -233,20 +234,9 @@ def collect_files(workspace, skills_only=False):
 # Commands
 # ---------------------------------------------------------------------------
 
-def cmd_scan(workspace, skills_only=False):
+def cmd_scan(workspace, skills_only=False, json_output=False):
     """Full egress scan."""
-    print("=" * 60)
-    print("OPENCLAW EGRESS — NETWORK DLP SCAN")
-    print("=" * 60)
-    print(f"Workspace: {workspace}")
-    print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
-    scope = "skills only" if skills_only else "full workspace"
-    print(f"Scope: {scope}")
-    print()
-
     files = collect_files(workspace, skills_only)
-    print(f"Scanning {len(files)} files...")
-    print()
 
     all_findings = []
     for fpath in files:
@@ -267,6 +257,32 @@ def cmd_scan(workspace, skills_only=False):
     high = [f for f in all_findings if f["risk"] == "HIGH"]
     warnings = [f for f in all_findings if f["risk"] == "WARNING"]
     infos = [f for f in all_findings if f["risk"] == "INFO"]
+
+    # JSON output mode
+    if json_output:
+        json_findings = []
+        for f in all_findings:
+            severity = "high" if f["risk"] in ("CRITICAL", "HIGH") else f["risk"].lower()
+            json_findings.append({
+                "file": f["file"],
+                "line": f["line"],
+                "severity": severity,
+                "message": f["reason"] + (f" ({f['url']})" if f["url"] else ""),
+                "url": f.get("url", ""),
+            })
+        print(json.dumps({"findings": json_findings}, indent=2))
+        return 2 if critical else (1 if high else 0)
+
+    print("=" * 60)
+    print("OPENCLAW EGRESS — NETWORK DLP SCAN")
+    print("=" * 60)
+    print(f"Workspace: {workspace}")
+    print(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
+    scope = "skills only" if skills_only else "full workspace"
+    print(f"Scope: {scope}")
+    print()
+    print(f"Scanning {len(files)} files...")
+    print()
 
     print("-" * 40)
     print("RESULTS")
@@ -403,6 +419,7 @@ def main():
     parser.add_argument("--skills-only", action="store_true",
                         help="Only scan skills directory")
     parser.add_argument("--workspace", "-w", help="Workspace path")
+    parser.add_argument("--json", action="store_true", help="Output JSON format")
     args = parser.parse_args()
 
     workspace = resolve_workspace(args.workspace)
@@ -411,7 +428,7 @@ def main():
         sys.exit(1)
 
     if args.command == "scan":
-        sys.exit(cmd_scan(workspace, args.skills_only))
+        sys.exit(cmd_scan(workspace, args.skills_only, json_output=args.json))
     elif args.command == "domains":
         sys.exit(cmd_domains(workspace))
     elif args.command == "status":
